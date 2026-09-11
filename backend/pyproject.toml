@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "evidencelens-backend"
-version = "0.1.0"
+version = "0.2.0"
 requires-python = ">=3.11"
-dependencies = ["fastapi>=0.115,<1", "pydantic>=2.10,<3", "pymupdf>=1.25,<2", "python-multipart>=0.0.20,<1", "uvicorn>=0.34,<1"]
+dependencies = ["fastapi>=0.115,<1", "pydantic>=2.10,<3", "pymupdf>=1.25,<2", "python-multipart>=0.0.20,<1", "uvicorn>=0.34,<1", "fastembed>=0.8,<0.9"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8,<10", "httpx>=0.28,<1"]
+dev = ["pytest>=8,<10", "httpx2>=2.12,<3"]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -17,3 +17,5 @@ include = ["app*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+cache_dir = "../.cache/pytest"
+markers = ["semantic_model: integration tests using real local embedding weights (opt in with EVIDENCELENS_TEST_MODEL=1)"]

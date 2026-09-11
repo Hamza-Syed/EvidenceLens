@@ -41,8 +41,9 @@ export default function Home() {
         <p className="mt-3 text-lg text-slate-600">Trace each claim back to the evidence you provide.</p>
       </header>
       <aside className="mb-8 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
-        <strong>First-slice baseline.</strong> Text is split into sentences. Only exact sentence matches can be supported;
-        other claims receive insufficient evidence. Paraphrases, compound claims, and conflicting evidence need further review.
+        <strong>Semantic retrieval, conservative verification.</strong> Text is split into factual claim candidates and matched to related passages.
+        Only exact sentence matches can be supported; semantic similarity alone is not proof.
+        Complex claims and conflicting evidence still need further review.
         Documents are temporary and cleared when the backend restarts.
       </aside>
       <div className="grid gap-6 md:grid-cols-2">
@@ -87,6 +88,7 @@ export default function Home() {
       <section aria-live="polite" aria-busy={!!busy} className="mt-10">
         <h2 className="mb-4 text-2xl font-semibold">Evidence review</h2>
         {results === null && <p className="text-slate-500">Upload sources and verify text to see claims and page citations.</p>}
+        {results?.length === 0 && <p className="text-slate-500">No factual claim candidates were identified. Try a concrete factual statement.</p>}
         {results?.map((result, index) => (
           <article key={result.claim.id} className="mb-5 rounded-2xl border border-slate-200 bg-white p-6">
             <span className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${result.classification === "supported" ? "bg-teal-100 text-teal-900" : "bg-amber-100 text-amber-950"}`}>{labels[result.classification]}</span>

@@ -6,4 +6,6 @@ frontend/node_modules/
 frontend/.next/
 frontend/*.tsbuildinfo
 .env*
+!.env.example
+.cache/
 sample_data/*.pdf

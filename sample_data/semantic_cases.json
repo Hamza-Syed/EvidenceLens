@@ -1,0 +1,16 @@
+{
+  "sources": [
+    "The trial enrolled 312 participants.",
+    "The intervention did not significantly reduce blood pressure.",
+    "Participants completed the survey online.",
+    "The observatory opened in 1998."
+  ],
+  "cases": [
+    {"claim": "The trial enrolled 312 participants.", "expected_source": 0, "expected_verdict": "supported"},
+    {"claim": "More than 300 people took part in the trial.", "expected_source": 0, "expected_verdict": "insufficient_evidence"},
+    {"claim": "The research recruited three hundred and twelve volunteers.", "expected_source": 0, "expected_verdict": "insufficient_evidence"},
+    {"claim": "Respondents filled out the questionnaire on the internet.", "expected_source": 2, "expected_verdict": "insufficient_evidence"},
+    {"claim": "The intervention significantly reduced blood pressure.", "expected_source": 1, "expected_verdict": "insufficient_evidence"},
+    {"claim": "Jupiter has ninety-five moons.", "expected_source": null, "expected_verdict": "insufficient_evidence"}
+  ]
+}

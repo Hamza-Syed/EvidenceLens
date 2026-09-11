@@ -6,12 +6,8 @@ import re
 from collections import Counter
 from typing import Protocol, Sequence
 
-from .models import Claim, Classification, Evidence, Passage, VerificationResult
-
-
-def sentences(text: str) -> list[str]:
-    # Deliberately a baseline: abbreviations and compound claims need a later provider.
-    return [part.strip() for part in re.split(r"(?<=[.!?])\s+|\n+", text) if part.strip()]
+from .models import Claim, ChunkedPassage, Classification, Evidence, Passage, VerificationResult
+from .text import sentences
 
 
 class ClaimExtractor(Protocol):
@@ -60,11 +56,12 @@ class HashVectorRetriever:
 
 class ExactSentenceVerifier:
     def verify(self, claim: Claim, evidence: Sequence[Passage]) -> VerificationResult:
-        normalize = lambda text: " ".join(text.split())
+        def normalize(text: str) -> str:
+            return " ".join(text.split())
         matched = any(
             normalize(claim.text) == normalize(sentence)
             for passage in evidence
-            for sentence in sentences(passage.text)
+            for sentence in (passage.complete_sentences if isinstance(passage, ChunkedPassage) else sentences(passage.text))
         )
         return VerificationResult(
             claim=claim,

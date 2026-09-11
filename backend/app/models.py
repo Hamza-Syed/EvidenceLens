@@ -30,6 +30,11 @@ class Passage(DomainModel):
     text: str
 
 
+class ChunkedPassage(Passage):
+    # Internal context for the temporary exact verifier; never added to API evidence.
+    complete_sentences: tuple[str, ...] = Field(exclude=True)
+
+
 class Claim(DomainModel):
     id: UUID = Field(default_factory=uuid4)
     text: str

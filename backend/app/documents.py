@@ -3,14 +3,16 @@ from uuid import UUID, uuid4
 
 import pymupdf
 
-from .models import Document, Passage
+from .models import ChunkedPassage, Document, Passage
+from .text import chunk_page, sentences
 
 
 class DocumentError(ValueError):
     pass
 
 
-def extract_pdf(name: str, content: bytes) -> tuple[Document, list[Passage]]:
+def extract_pdf(name: str, content: bytes, *, max_chars: int = 1000,
+                overlap_chars: int = 150) -> tuple[Document, list[Passage]]:
     document_id = uuid4()
     try:
         with pymupdf.open(stream=content, filetype="pdf") as pdf:
@@ -25,10 +27,12 @@ def extract_pdf(name: str, content: bytes) -> tuple[Document, list[Passage]]:
                 total_characters += len(text)
                 if total_characters > 2_000_000:
                     raise DocumentError("PDF exceeds the extracted text limit.")
-                # A page is the first-slice passage unit; citations never cross pages.
-                if text:
-                    passages.append(Passage(document_id=document_id, document_name=name,
-                                            page_number=page_number, text=text))
+                page_sentences = sentences(text)
+                for chunk in chunk_page(text, max_chars, overlap_chars):
+                    passages.append(ChunkedPassage(
+                        document_id=document_id, document_name=name, page_number=page_number,
+                        text=chunk, complete_sentences=tuple(sentence for sentence in page_sentences if sentence in chunk),
+                    ))
             if not passages:
                 raise DocumentError("PDF has no extractable text. OCR is not available.")
             return Document(id=document_id, name=name, page_count=len(pdf),

@@ -19,7 +19,7 @@ def pdf_bytes(*pages: str) -> bytes:
 
 @pytest.fixture
 def client():
-    with TestClient(create_app()) as client:
+    with TestClient(create_app(retriever=HashVectorRetriever())) as client:
         yield client
 
 
@@ -84,7 +84,7 @@ def test_invalid_or_textless_pdf(client, content):
 
 def test_failed_batch_is_atomic():
     store = DocumentStore()
-    with TestClient(create_app(store=store)) as client:
+    with TestClient(create_app(store=store, retriever=HashVectorRetriever())) as client:
         response = client.post("/api/documents", files=[
             ("files", ("valid.pdf", pdf_bytes("Valid sentence."), "application/pdf")),
             ("files", ("bad.pdf", b"invalid", "application/pdf")),
