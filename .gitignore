@@ -1,0 +1,9 @@
+venv/
+__pycache__/
+.pytest_cache/
+*.egg-info/
+frontend/node_modules/
+frontend/.next/
+frontend/*.tsbuildinfo
+.env*
+sample_data/*.pdf
