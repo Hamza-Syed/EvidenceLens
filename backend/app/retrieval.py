@@ -2,6 +2,7 @@
 
 import hashlib
 import math
+import logging
 from collections import OrderedDict
 from collections.abc import Sequence
 from threading import Lock
@@ -10,6 +11,8 @@ from typing import Protocol, runtime_checkable
 from .embeddings import EmbeddingProvider
 from .errors import EmbeddingError, EvidenceScopeError
 from .models import Claim, Passage
+
+logger = logging.getLogger(__name__)
 
 
 @runtime_checkable
@@ -29,13 +32,14 @@ def _unit_vector(values: Sequence[float]) -> tuple[float, ...]:
 
 class SemanticRetriever:
     def __init__(self, provider: EmbeddingProvider, *, top_k: int = 5,
-                 min_similarity: float = 0.45, cache_size: int = 4096):
+                 min_similarity: float = 0.45, cache_size: int = 4096, debug: bool = False):
         if top_k < 1 or cache_size < 1 or not math.isfinite(min_similarity) or not -1 <= min_similarity <= 1:
             raise ValueError("Invalid retrieval configuration.")
         self.provider = provider
         self.top_k = top_k
         self.min_similarity = min_similarity
         self.cache_size = cache_size
+        self.debug = debug
         self._cache: OrderedDict[str, tuple[float, ...]] = OrderedDict()
         self._dimensions: int | None = None
         self._lock = Lock()
@@ -96,6 +100,9 @@ class SemanticRetriever:
             if score >= self.min_similarity:
                 ranked.append((score, passage))
         ranked.sort(key=lambda item: item[0], reverse=True)
+        if self.debug:
+            logger.info("retrieval_trace claim_id=%s ranked=%s", claim.id,
+                        [(str(passage.id), round(score, 5)) for score, passage in ranked[:self.top_k]])
         return [passage for _, passage in ranked[:self.top_k]]
 
 

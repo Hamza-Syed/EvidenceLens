@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Document, VerificationResult, uploadDocuments, verifyText } from "../lib/api";
 
 const labels = { supported: "Supported", partially_supported: "Partially supported", contradicted: "Contradicted", insufficient_evidence: "Insufficient evidence" };
+const colors = { supported: "bg-teal-100 text-teal-900", partially_supported: "bg-amber-100 text-amber-950", contradicted: "bg-red-100 text-red-900", insufficient_evidence: "bg-slate-100 text-slate-700" };
 
 export default function Home() {
   const [files, setFiles] = useState<File[]>([]);
@@ -41,9 +42,9 @@ export default function Home() {
         <p className="mt-3 text-lg text-slate-600">Trace each claim back to the evidence you provide.</p>
       </header>
       <aside className="mb-8 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
-        <strong>Semantic retrieval, conservative verification.</strong> Text is split into factual claim candidates and matched to related passages.
-        Only exact sentence matches can be supported; semantic similarity alone is not proof.
-        Complex claims and conflicting evidence still need further review.
+        <strong>Evidence-grounded verification.</strong> Each claim is assessed against passages from your selected documents.
+        Results distinguish support, partial support, contradiction, and insufficient evidence.
+        Conflicting sources lead to abstention; similarity alone is not proof.
         Documents are temporary and cleared when the backend restarts.
       </aside>
       <div className="grid gap-6 md:grid-cols-2">
@@ -91,12 +92,12 @@ export default function Home() {
         {results?.length === 0 && <p className="text-slate-500">No factual claim candidates were identified. Try a concrete factual statement.</p>}
         {results?.map((result, index) => (
           <article key={result.claim.id} className="mb-5 rounded-2xl border border-slate-200 bg-white p-6">
-            <span className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${result.classification === "supported" ? "bg-teal-100 text-teal-900" : "bg-amber-100 text-amber-950"}`}>{labels[result.classification]}</span>
+            <span className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${colors[result.classification]}`}>{labels[result.classification]}</span>
             <h3 className="mt-4 text-lg font-semibold">{index + 1}. {result.claim.text}</h3>
             <p className="mt-2 text-sm leading-6 text-slate-600">{result.explanation}</p>
             <details className="mt-4">
-              <summary className="cursor-pointer text-sm font-semibold text-teal-800">Retrieved evidence ({result.evidence.length})</summary>
-              {result.evidence.length === 0 && <p className="mt-3 text-sm text-slate-500">No relevant passage was retrieved.</p>}
+              <summary className="cursor-pointer text-sm font-semibold text-teal-800">Evidence used for this verdict ({result.evidence.length})</summary>
+              {result.evidence.length === 0 && <p className="mt-3 text-sm text-slate-500">No decisive evidence was identified for this claim.</p>}
               {result.evidence.map((evidence) => (
                 <blockquote key={evidence.id} className="mt-4 border-l-2 border-teal-300 pl-4">
                   <p className="whitespace-pre-wrap break-words text-sm leading-6">{evidence.text}</p>

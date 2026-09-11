@@ -15,3 +15,11 @@ class EmbeddingError(ServiceError):
 
 class EvidenceScopeError(ServiceError):
     pass
+
+
+class VerifierOutputError(ServiceError):
+    pass
+
+
+class VerifierUnavailableError(ServiceError):
+    pass
