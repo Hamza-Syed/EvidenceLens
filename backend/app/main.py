@@ -1,6 +1,9 @@
 import logging
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import Response
+
+from .demo import DEMO_NAME, DEMO_TEXT, demo_pdf
 
 from .documents import DocumentError, DocumentStore, extract_pdf
 from .claims import AtomicClaimExtractor
@@ -39,6 +42,15 @@ def create_app(*, store: DocumentStore | None = None,
         ExactSentenceVerifier() if config.verifier_mode == "exact" else
         EvidenceGroundedVerifier(ChatCompletionProvider(config), max_input_chars=config.verifier_max_input_chars)
     )
+
+    @app.get("/api/demo")
+    def sample_inputs() -> dict[str, str]:
+        return {"name": DEMO_NAME, "text": DEMO_TEXT, "pdf_url": "/api/demo/document"}
+
+    @app.get("/api/demo/document")
+    def sample_document() -> Response:
+        return Response(demo_pdf(), media_type="application/pdf",
+                        headers={"Content-Disposition": f'inline; filename="{DEMO_NAME}"'})
 
     @app.post("/api/documents", response_model=UploadResponse, status_code=201)
     def upload(files: list[UploadFile] = File(...)) -> UploadResponse:

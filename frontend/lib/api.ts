@@ -35,3 +35,12 @@ export function verifyText(text: string, documentIds: string[]) {
     body: JSON.stringify({ text, document_ids: documentIds }),
   });
 }
+
+export async function loadSample() {
+  const sample = await request<{ name: string; text: string; pdf_url: string }>("/api/demo", { method: "GET" });
+  const response = await fetch(sample.pdf_url);
+  if (!response.ok) throw new Error("Unable to load the sample PDF. Please retry.");
+  const file = new File([await response.blob()], sample.name, { type: "application/pdf" });
+  const uploaded = await uploadDocuments([file]);
+  return { ...uploaded, text: sample.text };
+}

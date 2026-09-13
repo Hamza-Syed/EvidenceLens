@@ -1,81 +1,101 @@
 # EvidenceLens
 
-Check factual text against user-supplied PDF documents, with document and page citations.
+**Check AI-generated claims against your documents, with evidence you can inspect.**
 
-## Current milestone: evidence-grounded semantic verification
+A local-first Next.js + FastAPI application that separates finding relevant passages
+from deciding whether they establish a claim.
 
-The working pipeline now includes a replaceable model-backed verifier. PDF uploads and response shapes remain compatible; each result's evidence list now contains only verifier-selected decisive citations. No accounts, authentication, payments, web search, or document persistence have been added.
+## The problem
+
+AI-generated factual claims can sound credible even when their sources do not
+support them. A relevant search result alone is not proof.
+
+## What EvidenceLens does
+
+Upload PDFs, paste text, and review atomic factual claims. EvidenceLens retrieves
+passages from the documents you select, evaluates each claim against only those
+passages, and displays a verdict, explanation, and decisive filename/page citations.
+
+**Try sample** loads a fictional three-page study and four claims. Choose **Verify
+claims** to run the real pipeline. No stored or fabricated AI results are used.
+The interface shows elapsed time while the local CPU works; a four-claim check can
+take minutes. A 30–60 second presentation should use a completed live run.
+
+## Why it is different
+
+- Retrieval and verification are separate: similarity ranks candidates, never truth or confidence.
+- Missing evidence and detected source conflicts lead to conservative abstention.
+- Every candidate is assessed; decisive citations are checked against original text.
+- Selected document IDs constrain retrieval and final citation validation.
+- The default verifier runs locally behind a replaceable service interface.
+
+## Architecture
 
 ```mermaid
 flowchart TD
-    A[Uploaded PDFs] --> B[PyMuPDF text extraction]
-    B --> C[Page-local overlapping chunks]
-    C --> D[Local embeddings / in-memory index]
-    E[Verification text] --> F[Atomic claim extraction]
-    F --> G[Claim embeddings]
-    G --> H[Document-scoped semantic retrieval]
-    D --> H
-    S[Selected document IDs] --> H
-    H --> I[Validate candidate text and source metadata]
-    I --> J[Evidence-grounded verifier]
-    J --> K[Verdict and decisive citations]
-    K --> L[UI]
+    PDF[User PDFs] --> Extract[Local PDF extraction: filename + page]
+    Extract --> Chunks[Page-local chunks]
+    Chunks --> Index[Local embeddings / in-memory index]
+    Text[Text to verify] --> Claims[Atomic factual claims]
+    Claims --> Retrieve
+    Index --> Retrieve
+    Selection[Selected document IDs] --> Retrieve
+    subgraph R["RETRIEVAL — finds relevant evidence"]
+      Retrieve[Document-scoped semantic ranking]
+    end
+    Retrieve --> Scope[Validate candidate scope]
+    subgraph V["VERIFICATION — determines evidentiary relationship"]
+      Scope --> Model[Local Qwen verifier on loopback]
+    end
+    subgraph B["VALIDATION — enforces trust boundaries"]
+      Model --> Checks[Schema + every assessment + exact quotes + conflict rules]
+      Checks --> Citations[Restore canonical filename / page citations]
+    end
+    Citations --> UI[UI: verdict + explanation + decisive evidence]
+    style R fill:#e0f2fe,stroke:#0284c7
+    style V fill:#fef3c7,stroke:#d97706
+    style B fill:#ccfbf1,stroke:#0f766e
 ```
 
-### Claim extraction
+## Evaluation
 
-`AtomicClaimExtractor` implements the existing `ClaimExtractor` protocol with deterministic English heuristics. It recognizes common predicates, splits independent clauses and simple shared-subject predicates, preserves reporting phrases, and skips obvious opinions and questions. It does not split every occurrence of “and.” Conditions, negation, modality, quotes, and reported clauses are conservatively retained when splitting could change meaning.
+**22/26 live benchmark cases passed (84.6%).** Failures involved modality, causation,
+entity identity and compound-claim conflict handling. Expected-class accuracy was
+100% for support and partial support, 87.5% for contradiction, and 57.1% for
+insufficient evidence. All returned citations passed provenance checks.
 
-For example:
+The final backend suite with real embeddings passed 149 tests. Warm model calls
+had a 39.3-second median; the cold first request took 103.0 seconds, excluding
+20.3 seconds of server startup. Prewarming moves cold work ahead of a demo.
 
-> The study included 312 adults. Participants completed the survey online, and researchers found that sleep quality improved after the intervention.
+See the [complete live benchmark and performance report](docs/evaluation/README.md)
+and [raw per-case results](docs/evaluation/live-results.json). The 26 synthetic cases
+exercise quantities, dates, qualifiers, causality, entity identity, conflicts and
+adversarial instructions. The benchmark supplies passages directly to the verifier;
+it does not measure end-to-end retrieval or extraction accuracy.
 
-becomes three typed claims: “The study included 312 adults.”, “Participants completed the survey online.”, and “Researchers found that sleep quality improved after the intervention.”
+Ordinary tests use deterministic providers and do not need a running model.
+Live evaluation includes failures; valid citations do not prove correct reasoning.
+The [previous milestone record](docs/verification-validation.md) is retained as history.
 
-All output passes a bounded Pydantic schema. `StructuredClaimExtractor` is an optional injection adapter for a future `StructuredClaimProvider`; it accepts only JSON `{ "claims": [{ "text": "..." }] }`, rejects extra fields, wrong types, blank text, oversized responses, and more than 100 claims, and reports malformed output as HTTP 502. Claim extraction still uses heuristics by default; semantic verification uses a separate local model. Schema validation checks structure, not whether a model preserved the input's meaning.
+## Trust boundaries and limitations
 
-### Chunking and embeddings
+The default app processes uploads locally and sends only the claim and retrieved
+evidence to its loopback verifier. Changing provider/backend configuration changes
+that boundary. Model weights require a one-time download.
 
-PDF text is split into verbatim page-local windows, default maximum **1,000 characters**, with up to **150 characters of overlap**. The splitter prefers sentence boundaries, then word boundaries. Long sentences or tokens can require a hard cut. Whitespace trimming is the only change to citation text. Chunks never cross pages; every chunk retains its own document UUID, filename, one-based page number, and passage UUID.
+Document content is untrusted. Obvious verifier-directed instructions trigger
+abstention; this is not complete prompt-injection protection. Models can misread
+facts despite schema and quote validation. Retrieval can miss evidence, and atomic
+claim extraction uses conservative English heuristics.
 
-The smaller windows reduce topic dilution and overlap retains some surrounding context. Internal chunk metadata tracks which original page sentences remain complete, so a hard-cut sentence fragment cannot become exact-match support. This metadata does not change the evidence API. Character limits are a practical English approximation, not a tokenizer limit: unusual text can still exceed a model's token budget, and tables, complex PDF reading order, and sentences spanning pages remain limitations. Overlapping passages may both be retrieved.
+Documents disappear from the backend's in-memory store on restart, subject to
+normal OS/runtime behavior. The separate verifier also maintains an in-memory
+prompt cache; restart it too to end a sensitive session. There are no formal
+security or correctness guarantees. See [privacy and threat model](docs/privacy.md)
+and [implementation details](docs/implementation.md).
 
-`FastEmbedProvider` implements a replaceable `EmbeddingProvider` with separate document and query methods. The default is **`sentence-transformers/all-MiniLM-L6-v2`**, a local CPU embedding model run through FastEmbed/ONNX. The model was chosen after comparing it with BGE-small on the committed fixtures; MiniLM ranked the intended source first for every positive fixture. This small evaluation is not a general quality benchmark. See [FastEmbed retrieval usage](https://qdrant.github.io/fastembed/qdrant/Retrieval_with_FastEmbed/) and [supported models](https://qdrant.github.io/fastembed/examples/Supported_Models/).
-
-Uploads generate chunk embeddings before documents become available. Vectors are validated for count, dimensions, finite values, and nonzero norm. `SemanticRetriever` caches up to 4,096 content-keyed vectors in memory, reuses them for subsequent requests, and recomputes evicted entries as needed. It ranks only the selected passages by cosine similarity using a simple linear scan; no vector database is required for this local milestone. Query and document vectors always use the same provider instance/model.
-
-### Verification and trust boundaries
-
-**Retrieval determines relevance. Verification determines evidentiary relationship.**
-
-The existing `Verifier` interface now has two implementations: `EvidenceGroundedVerifier` (the default) and `ExactSentenceVerifier` (an explicitly selected development baseline). The semantic verifier depends on a provider protocol; `ChatCompletionProvider` handles a compatible chat-completions HTTP endpoint. Local llama.cpp is the prepared deployment, with no tools or network searches available to the model. A hosted compatible provider can be configured explicitly; that would transmit the claim and candidate passages to that provider.
-
-| Verdict | Meaning |
-| --- | --- |
-| `supported` | All material factual components and qualifiers are established, including by paraphrase or joint evidence. |
-| `partially_supported` | A meaningful portion is established; another material component is missing, and none is directly contradicted. Topic overlap alone does not qualify. |
-| `contradicted` | At least one material component directly conflicts with evidence for the same entity, event, and temporal scope. |
-| `insufficient_evidence` | Evidence cannot establish the claim or a meaningful portion, cannot directly contradict it, or materially conflicting sources require abstention. |
-
-For example, 312 participants supports “more than 300”; adults without a count partially supports “312 adults”; 212 contradicts an asserted exact total of 312. Possibility does not establish actuality, association does not establish causation, and some does not establish all. The benchmark distinguishes numeric ranges, date precision, before/after, entity identity, and comparison direction.
-
-The verifier receives **only the atomic claim, selected retrieved passages, and their metadata**. Selected-document scoping is checked before verification and every returned citation is checked again afterward. The provider has no document store, unselected passages, browsing tools, or retrieval scores. Similarity is never supplied as proof or displayed as confidence.
-
-Each model result must satisfy `VerifierOutput`: verdict, concise explanation, decisive evidence labels, conflict flag, and one assessment per candidate. Non-irrelevant assessments require verbatim source quotes. The backend rejects extra fields (including confidence), unknown or duplicate labels, omitted assessments, invented quotes, inconsistent decisions, and unsupported sentence fragments. Stable UUIDs and original filenames/page numbers are restored from canonical candidates; the model never supplies citation metadata to the UI. Quote and schema validation establish provenance and structure, not entailment correctness.
-
-The transport requests structural schema constraints; length and collection bounds are enforced locally by the full Pydantic schema to avoid excessive grammar expansion in local runtimes. HTTP output bytes and generation tokens are also bounded. The frontend proxy allows up to 180 seconds for local inference; large multi-claim requests can exceed that budget and should be split into smaller submissions.
-
-**Conflicts:** the model must inspect every candidate and flag material source disagreement. A conflict flag, or whole-claim support alongside a materially contradictory assessment, forces `insufficient_evidence` with an explicit conflict explanation and citations from both sides. No authority ranking is invented. Supporting one clause while contradicting a different clause is a contradicted compound claim, not automatically source disagreement. Disagreement in passages that retrieval misses cannot be detected.
-
-**Prompt injection:** instructions live in a system message; claim, filenames, and evidence are serialized separately as untrusted JSON data. A small deterministic guard abstains before calling the provider when content contains obvious verifier-directed instructions such as ignoring previous instructions, forcing a verdict, or requesting evidence IDs. It conservatively abstains on the entire claim, including when a suspicious passage also contains facts. Other content remains untrusted data under the model prompt. Legitimate discussion of these instructions can trigger abstention, and the pattern guard is not a complete injection detector. The initial local-model evaluation demonstrated that prompting alone was insufficient; the application does not rely on that alone.
-
-**Fail closed:** empty evidence abstains without a provider call. Malformed, incomplete, oversized, ungrounded, or inconsistent model output returns HTTP 502; timeouts, unavailable providers, and excessive model inputs return HTTP 503. The API returns no partial batch of verdicts when one fails. There is no automatic fallback to exact-match support. Logs distinguish transport and validation failures without raw prompts, responses, credentials, or chain-of-thought.
-
-**Observability:** set `EVIDENCELENS_DEBUG_PIPELINE=true` to log claim UUIDs, candidate UUIDs/ranks/cosine values, selected UUIDs, and final verdicts. Match claim UUIDs to the response for local debugging. Candidate lists remain internal; the UI shows only decisive passages, which may support, contradict, or demonstrate conflict.
-
-**Limitations:** local models are fallible and may misinterpret quantities, qualifiers, causality, conflicts, or malicious text despite a valid schema. The checks cannot prove that an explanation follows logically from its quotes or that the model ignored all prior knowledge. Atomic extraction remains a conservative English heuristic; pronouns, uncommon verbs, complex syntax, and non-English text can remain compound or be missed. Retrieval can omit evidence. Model context/input limits bound each request; long inputs fail explicitly rather than being silently truncated. Document truth and source authority are not independently established. Documents and vectors remain in memory.
-
-## Run
+## Running locally
 
 Requires Python 3.11+ and Node.js 20.9+. Run commands from the repository root unless indicated.
 
@@ -86,7 +106,7 @@ python -m venv venv
 .\venv\Scripts\python.exe -m uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1
 ```
 
-Preparing the embedding model requires network access once to download public weights (roughly 90 MB for the default embedding model). Document text and claims are never uploaded to a model service. Weights are cached under `.cache/fastembed`; user documents and their vectors remain in process memory. Preparation is optional but avoids first-upload latency. Once cached, set `$env:HF_HUB_OFFLINE='1'` for offline operation. Missing or failed embeddings return HTTP 503; there is no silent lexical fallback.
+Preparing the embedding model requires network access once to download public weights (roughly 90 MB for the default embedding model). With the default configuration, document text and claims stay within the local application and loopback verifier. Weights are cached under `.cache/fastembed`; user documents and their vectors remain in process memory. Preparation is optional but avoids first-upload latency. Once cached, set `$env:HF_HUB_OFFLINE='1'` for offline operation. Missing or failed embeddings return HTTP 503; there is no silent lexical fallback.
 
 Prepare the local semantic verifier once (Windows CPU runtime plus about **1.9 GB** of Qwen3-4B-Instruct-2507 Q3_K_S weights). The script pins and verifies SHA-256 hashes and checks available disk space with a 256 MiB reserve. The model also needs several GB of available RAM; CPU verification can take tens of seconds per claim.
 
@@ -95,7 +115,7 @@ Prepare the local semantic verifier once (Windows CPU runtime plus about **1.9 G
 .\scripts\start_local_verifier.ps1
 ```
 
-Keep this model server running in its own terminal. It binds only to `127.0.0.1:8081`, disables the model-server web UI, and serves the alias `evidencelens-verifier`. Runtime and weights remain ignored under `.cache/verifier`. The backend does not start or download a verifier implicitly. Other platforms can run their own compatible local server at the configured URL. See [llama.cpp server](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md) and the [model distribution](https://huggingface.co/bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF).
+Keep this model server running in its own terminal. Before a demonstration, run `.\\venv\\Scripts\\python.exe scripts/warm_verifier.py` in a second terminal to check readiness and prewarm the real instruction prefix with synthetic data. This moves cold work ahead of the demo; it does not eliminate inference cost. It binds only to `127.0.0.1:8081`, disables the model-server web UI, and serves the alias `evidencelens-verifier`. Runtime and weights remain ignored under `.cache/verifier`. The backend does not start or download a verifier implicitly. Other platforms can run their own compatible local server at the configured URL. See [llama.cpp server](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md) and the [model distribution](https://huggingface.co/bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF).
 
 In another terminal:
 
@@ -137,71 +157,54 @@ The threshold was checked against the small evaluation fixtures; tune it on repr
 - `Document`: UUID, original filename, page count, passage count.
 - `Passage` / `Evidence`: passage UUID, document UUID/name, one-based page number, source text.
 - `Claim`: UUID and claim text.
-- `VerificationResult`: claim, classification, explanation, retrieved evidence.
+- `VerificationResult`: claim, classification, explanation, decisive evidence.
+- `GET /api/demo`: synthetic sample filename, input text and PDF URL; no verdicts.
+- `GET /api/demo/document`: generated three-page sample PDF. Try sample uploads it through the ordinary document endpoint and selects only that new document.
 - `POST /api/documents`: multipart `files`; returns `201 {documents: Document[]}`. Upload batches are atomic from the document store's perspective, including embedding failures. A failed batch may leave reusable derived vectors in the bounded memory cache, but makes no documents queryable.
 - `POST /api/verifications`: JSON `{text: string, document_ids: UUID[]}`; returns `{results: VerificationResult[]}`. Unknown document IDs fail before extraction/retrieval.
 - Limits: 10 PDFs per upload, 10 MiB each, 200 pages each, 2 million extracted characters per file, 100 documents per process; 20,000 verification characters, 100 selected IDs, 100 sentence candidates and 100 extracted claims. Image-only and encrypted PDFs are rejected.
 - Errors: `413` upload size/capacity, `422` invalid input/PDF/claim count, `404` unknown document, `502` invalid claim/verifier output or evidence scope violation, `503` embedding/verifier service failure or verifier input limit. No partial verification response is returned on service failure.
 
-## Tests and examples
+## Tests and reproducible checks
 
-See [the milestone validation record](docs/verification-validation.md) for executed checks, live examples, latency observations, and evaluation limits.
-
-Deterministic regression suite (no model downloads):
+Run the ordinary suite without model downloads:
 
 ```powershell
 .\venv\Scripts\python.exe -m pytest backend/tests -q
-```
-
-Complete suite including real embedding evaluation, after preparing the model:
-
-```powershell
-$env:EVIDENCELENS_TEST_MODEL='1'
-$env:HF_HUB_OFFLINE='1'
-.\venv\Scripts\python.exe -m pytest backend/tests -q
-```
-
-The ordinary suite skips seven embedding integration tests and 26 live-verifier benchmark cases. Existing regression tests explicitly use the exact baseline through the test fixture, and semantic verifier unit tests use deterministic mocked provider output. Unit tests use named stubs only for deterministic index math and boundary checks; the real model tests exercise all committed paraphrase/negation fixtures and PDF-to-verification scoping. Fixtures live in `sample_data/semantic_cases.json`.
-
-```powershell
 cd frontend
 npm run typecheck
 npm run build
 ```
 
-Generate PDFs with `.\venv\Scripts\python.exe sample_data/generate_sample.py` (original observatory demo) or `.\venv\Scripts\python.exe sample_data/generate_semantic_sample.py`. Upload `semantic-trial.pdf` and paste “More than 300 people took part in the trial.” The top candidate should cite page 1, “The trial enrolled 312 participants.” With the local verifier running, the verdict should be `supported`. The blood pressure fixture on page 2 should produce `contradicted` for “The intervention significantly reduced blood pressure.” An unrelated claim should return `insufficient_evidence`.
-
-The human-readable semantic verification benchmark is `sample_data/verification_cases.json`: 26 positive, negative, partial, conflict, abstention, and adversarial cases covering the requested reasoning categories. Mocked tests validate the adapter, aggregation, citations, and error behavior; they do **not** measure model reasoning accuracy.
-
-Run verifier unit tests without a model server:
+For optional real embeddings, set `EVIDENCELENS_TEST_MODEL=1` after preparing weights.
+For the complete live verifier benchmark with raw results:
 
 ```powershell
-.\venv\Scripts\python.exe -m pytest backend/tests/test_verification.py backend/tests/test_verifier_provider.py -q
+.\venv\Scripts\python.exe scripts/evaluate_verifier.py
 ```
 
-Run the optional live benchmark against the configured provider:
+Use `--cold-first` only immediately after starting a fresh model process. A run
+records all outcomes without changing fixture expectations. The opt-in pytest
+benchmark remains available with `EVIDENCELENS_TEST_VERIFIER=1`.
+
+Start the production frontend with `npm run build`, then `npm run start` in
+`frontend/`. With backend and verifier running, exercise the same sample path
+through the production proxy:
 
 ```powershell
-$env:EVIDENCELENS_TEST_VERIFIER='1'
-.\venv\Scripts\python.exe -m pytest backend/tests/test_verifier_live.py -q
+.\venv\Scripts\python.exe scripts/smoke_demo.py
 ```
 
-Changing model or quantization may change benchmark outcomes. Do not interpret passing mocked tests as live model accuracy. Unset this variable to return to the offline test suite.
+Generate a portable copy of the fictional demo PDF with
+`python sample_data/generate_demo.py` after installing the backend. Generated PDFs,
+dependencies, build outputs and model caches are ignored; source generators and
+fixtures are committed.
 
-With the model server, backend, and production frontend running, execute the repeatable end-to-end check:
+Known warnings: the installed Starlette/AnyIO combination emits a BlockingPortal
+deprecation; the pinned GGUF loader reclassifies one control-looking token; Next.js
+identifies its proxy timeout setting as experimental. See the evaluation report for
+executed checks and limitations.
 
-```powershell
-.\venv\Scripts\python.exe scripts/smoke_verification.py
-```
+## Showcase material
 
-It uploads a generated PDF through the frontend proxy and asserts semantic support, negated contradiction, abstention, and page citations. If a weight download is interrupted, rerun the preparation command to resume its partial file.
-
-### Dependency warnings
-
-The deprecated HTTPX TestClient fallback was resolved by using `httpx2` in development dependencies. Starlette 1.6.0 still references `anyio.abc.BlockingPortal` in `starlette/testclient.py:53`; AnyIO 4.15.1 emits a deprecation warning recommending `anyio.from_thread.BlockingPortal`. This is third-party code; the warning remains visible rather than being suppressed or patched locally.
-
-On Windows, initial weight downloads may warn about unavailable symlinks (additional disk usage) and unauthenticated Hugging Face requests (lower rate limits). FastEmbed can use its alternate download source if necessary. These do not require API keys or changes to verification behavior.
-
-The pinned Qwen GGUF also emits a llama.cpp warning that one control-looking token is reclassified during model loading. The server applies that metadata correction and continues; live verification is checked separately. No dependency or model warnings are hidden.
-
-Further work should expand and calibrate the verification benchmark, strengthen model evaluation, and measure latency and abstention behavior. Persistent storage and authentication remain out of scope.
+[Project descriptions, demo scripts and resume drafts](docs/showcase/README.md).

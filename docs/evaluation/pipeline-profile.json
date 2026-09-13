@@ -1,0 +1,25 @@
+{
+  "pdf_extraction_seconds": 0.026117200002772734,
+  "claim_extraction_seconds": 0.000673700007610023,
+  "embedding_initialization_and_index_seconds": 2.385993200005032,
+  "first_retrieval_seconds": 0.05426130001433194,
+  "four_warm_retrievals_seconds": 0.18915990000823513,
+  "candidate_pages": [
+    [
+      1
+    ],
+    [
+      3
+    ],
+    [
+      2
+    ],
+    []
+  ],
+  "replay_validation_cases": 24,
+  "replay_adapter_validation_median_seconds": 0.001554950009449385,
+  "replay_adapter_validation_max_seconds": 0.016742600011639297,
+  "backend_metadata_http_median_seconds": 0.0029606000025523826,
+  "frontend_proxy_metadata_http_median_seconds": 0.0061301999958232045,
+  "note": "Replay includes serialization, Pydantic parsing and full verifier validation; no inference. Embedding initialization includes cached disk weight loading. HTTP samples measure a small metadata GET, not verification overhead."
+}

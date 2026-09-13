@@ -1,5 +1,8 @@
 # Semantic verification milestone validation
 
+Historical record for the previous milestone. The subsequent complete 26-case
+evaluation and performance results are in [evaluation/README.md](evaluation/README.md).
+
 Validated on Windows with Python 3.14, Next.js 16.3.4, llama.cpp b10809, and
 Qwen3-4B-Instruct-2507 Q3_K_S. The configured model alias is
 `evidencelens-verifier`; embeddings remain local MiniLM through FastEmbed.
