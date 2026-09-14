@@ -17,8 +17,15 @@ backend and verifier bound to loopback; do not expose their ports to a network.
   remote verifier or backend changes this privacy boundary. Check configuration
   before using sensitive material. Public model downloads require network access;
   subsequent local inference can run offline.
-- Documents and vectors live in backend memory. The model server also holds input
-  tokens in its in-memory prompt/KV cache. Restarting the backend drops its document
+- The application document store holds extracted text and source metadata in backend
+  memory; retrieval vectors also remain in memory. Incoming FastAPI `UploadFile` objects use spooled temporary
+  files: uploads larger than the framework threshold may be written to temporary
+  disk storage (1 MiB in the validated Starlette version). The upload handler closes
+  these files in its `finally` cleanup. Closing/deleting temporary files is not a
+  secure-erasure guarantee; documents are not exclusively memory-resident throughout
+  the upload lifecycle.
+- The model server also holds input tokens in its in-memory prompt/KV cache.
+  Restarting the backend drops its document
   store, but does not clear the separate verifier cache. Restart that process too
   when ending a sensitive session. There is no secure-erasure guarantee: OS paging,
   crash dumps, browser state, and normal runtime behavior may retain data.

@@ -1,11 +1,40 @@
 venv/
+.venv/
 __pycache__/
 .pytest_cache/
 *.egg-info/
-frontend/node_modules/
-frontend/.next/
-frontend/*.tsbuildinfo
+node_modules/
+.next/
+*.tsbuildinfo
+dist/
+build/
+out/
+coverage/
+.coverage
+htmlcov/
 .env*
 !.env.example
 .cache/
-sample_data/*.pdf
+# Generated/uploaded documents and model assets. Keep source generators and JSON fixtures.
+*.pdf
+uploads/
+*.gguf
+*.onnx
+*.safetensors
+*.pt
+*.pth
+# Logs and interrupted/generated temporary files.
+*.log
+*.tmp
+*.temp
+*.partial
+*.part
+*.swp
+*.swo
+*~
+# Local editor and OS state.
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini

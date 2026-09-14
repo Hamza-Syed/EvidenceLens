@@ -89,45 +89,94 @@ abstention; this is not complete prompt-injection protection. Models can misread
 facts despite schema and quote validation. Retrieval can miss evidence, and atomic
 claim extraction uses conservative English heuristics.
 
-Documents disappear from the backend's in-memory store on restart, subject to
-normal OS/runtime behavior. The separate verifier also maintains an in-memory
+The application keeps extracted text in its in-memory document store and also
+holds retrieval vectors in memory. The store is cleared on backend restart.
+During upload, FastAPI may spool incoming files
+above its framework threshold to temporary disk storage. Cleanup closes those
+files; closing/deleting them does not guarantee secure erasure. Documents are not
+exclusively memory-resident throughout upload. The separate verifier maintains an in-memory
 prompt cache; restart it too to end a sensitive session. There are no formal
 security or correctness guarantees. See [privacy and threat model](docs/privacy.md)
 and [implementation details](docs/implementation.md).
 
 ## Running locally
 
-Requires Python 3.11+ and Node.js 20.9+. Run commands from the repository root unless indicated.
+The commands below target Windows PowerShell. Install Git, Python 3.11+ and
+Node.js 20.9+. Clone the repository and enter its root directory:
+
+```powershell
+git clone https://github.com/Hamza-Syed/EvidenceLens.git
+cd EvidenceLens
+```
+
+While the repository is private, cloning requires GitHub access. No API key is
+needed for the default local verifier. Other operating systems need their own
+compatible local verifier runtime; the preparation script downloads Windows CPU binaries.
+
+### One-time preparation — repository root
 
 ```powershell
 python -m venv venv
 .\venv\Scripts\python.exe -m pip install -e "./backend[dev]"
 .\venv\Scripts\python.exe -m app.prepare_model
-.\venv\Scripts\python.exe -m uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1
+.\venv\Scripts\python.exe scripts/prepare_local_verifier.py
+npm --prefix frontend ci
 ```
 
-Preparing the embedding model requires network access once to download public weights (roughly 90 MB for the default embedding model). With the default configuration, document text and claims stay within the local application and loopback verifier. Weights are cached under `.cache/fastembed`; user documents and their vectors remain in process memory. Preparation is optional but avoids first-upload latency. Once cached, set `$env:HF_HUB_OFFLINE='1'` for offline operation. Missing or failed embeddings return HTTP 503; there is no silent lexical fallback.
+Preparation downloads public embedding weights (roughly 90 MB) and the pinned
+Windows verifier runtime plus about **1.9 GB** of Qwen3-4B-Instruct-2507 Q3_K_S
+weights. The verifier download is SHA-256 checked and requires a 256 MiB disk
+reserve. The model also needs several GB of available RAM. Assets are cached under
+`.cache/fastembed` and `.cache/verifier`; they are not committed.
 
-Prepare the local semantic verifier once (Windows CPU runtime plus about **1.9 GB** of Qwen3-4B-Instruct-2507 Q3_K_S weights). The script pins and verifies SHA-256 hashes and checks available disk space with a 256 MiB reserve. The model also needs several GB of available RAM; CPU verification can take tens of seconds per claim.
+With the default configuration, document text and claims stay within the local
+application and loopback verifier. The application store contains extracted text
+and vectors in memory; uploads may use temporary disk files as described above.
+After preparing the embedding weights, `HF_HUB_OFFLINE=1` avoids further embedding
+model downloads. Missing embeddings return HTTP 503, with no lexical fallback.
+
+Keep three separate terminals open. In each new terminal, first navigate to the
+clone's repository root; do not assume another terminal's working directory carries over.
+
+### Terminal 1 — verifier; working directory: repository root
 
 ```powershell
-.\venv\Scripts\python.exe scripts/prepare_local_verifier.py
 .\scripts\start_local_verifier.ps1
 ```
 
-Keep this model server running in its own terminal. Before a demonstration, run `.\\venv\\Scripts\\python.exe scripts/warm_verifier.py` in a second terminal to check readiness and prewarm the real instruction prefix with synthetic data. This moves cold work ahead of the demo; it does not eliminate inference cost. It binds only to `127.0.0.1:8081`, disables the model-server web UI, and serves the alias `evidencelens-verifier`. Runtime and weights remain ignored under `.cache/verifier`. The backend does not start or download a verifier implicitly. Other platforms can run their own compatible local server at the configured URL. See [llama.cpp server](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md) and the [model distribution](https://huggingface.co/bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF).
+Leave this process running. It binds to `127.0.0.1:8081`, disables the model-server
+web UI, and serves the alias `evidencelens-verifier`. The backend does not start or
+download it implicitly. See [llama.cpp server](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md)
+and the [model distribution](https://huggingface.co/bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF).
 
-In another terminal:
+### Terminal 2 — backend; working directory: repository root
+
+```powershell
+$env:HF_HUB_OFFLINE='1'
+.\venv\Scripts\python.exe scripts/warm_verifier.py
+.\venv\Scripts\python.exe -m uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1 --port 8000
+```
+
+The warmup checks readiness and verifies synthetic evidence before starting the
+backend. It moves cold work ahead of a demo; it does not eliminate inference cost.
+Leave the backend running. Use one worker: the document store is not shared between
+processes. Restarting it clears that store, but not the separate verifier's cache.
+
+### Terminal 3 — frontend; start at repository root, then enter `frontend/`
 
 ```powershell
 cd frontend
-npm ci
 npm run dev
 ```
 
-Open http://localhost:3000. The frontend proxies `/api/*` to `http://127.0.0.1:8000`; set `BACKEND_URL` before building/starting Next.js to change it. Interactive API docs: http://127.0.0.1:8000/docs.
+Leave the frontend running. Open http://127.0.0.1:3000, choose **Try sample**, then
+**Verify claims**. Local CPU inference can take minutes for the four-claim sample.
+The frontend proxies `/api/*` to `http://127.0.0.1:8000`; set `BACKEND_URL` before
+building/starting Next.js to change it. API docs: http://127.0.0.1:8000/docs.
 
-Documents disappear on backend restart. Run one backend worker for this local workspace; there is no cross-worker/shared-user document store.
+For additional commands below, open a new terminal at the repository root unless
+its working directory is explicitly stated. Use the project venv interpreter;
+activating the venv is not required by these commands.
 
 ## Configuration
 
@@ -196,7 +245,7 @@ through the production proxy:
 ```
 
 Generate a portable copy of the fictional demo PDF with
-`python sample_data/generate_demo.py` after installing the backend. Generated PDFs,
+`.\venv\Scripts\python.exe sample_data/generate_demo.py` from the repository root after installing the backend. Generated PDFs,
 dependencies, build outputs and model caches are ignored; source generators and
 fixtures are committed.
 
@@ -208,3 +257,10 @@ executed checks and limitations.
 ## Showcase material
 
 [Project descriptions, demo scripts and resume drafts](docs/showcase/README.md).
+
+## Licensing status
+
+No project license has been granted yet. Public availability, if enabled, should
+not be interpreted as an open-source license or permission for unrestricted reuse.
+Dependencies and separately downloaded models retain their own licenses, including
+PyMuPDF's AGPL/commercial licensing options. A project licensing decision is pending.

@@ -69,5 +69,6 @@ evidence, and abstention for materially conflicting sources.
   the configured proxy timeout as experimental; its production build passes.
 
 No authentication, persistence, accounts, payments, or web search were added.
-Documents and vectors remain in memory; downloaded runtime/model assets are ignored
+The application document store and vectors remain in memory; upload handling may use
+temporary disk files (see [privacy details](privacy.md)). Downloaded runtime/model assets are ignored
 by Git. See README.md for setup, exact verdict definitions, and test commands.
